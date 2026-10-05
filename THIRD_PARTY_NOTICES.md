@@ -43,8 +43,8 @@ copied; StarGlass's sampler is implemented independently in C#.
 https://github.com/poncippg-spec/liquidDX11
 
 The native desktop panel (`native/glass-panel/`) is built on the glass module
-from this project: `glass/backdrop.cpp` (DXGI Desktop Duplication into a GPU
-texture), `glass/glass.cpp` and `glass/shaders.h` (HLSL glass surface).
+from this project: `glass/backdrop.cpp` (original desktop capture, replaced in StarGlass by
+independent Windows Graphics Capture sources), `glass/glass.cpp` and `glass/shaders.h` (HLSL glass surface).
 
 StarGlass changes on top of it:
 

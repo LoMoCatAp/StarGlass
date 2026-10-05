@@ -14,9 +14,9 @@ Windows 桌面上的 GitHub 监控面板，用液态玻璃显示项目的 Stars 
 
 StarGlass 是一个可自行配置的 Windows 桌面工具。双击打开玻璃面板，通过面板右键或系统托盘进入设置，添加仓库、调整材质和外观。
 
-玻璃背景来自实时桌面，使用 DXGI Desktop Duplication、Direct3D 11 和 HLSL 在 GPU 上完成采集、折射、色散和磨砂。Electron 与 React 负责设置界面、托盘和 GitHub 数据。
+玻璃背景来自实时桌面，使用 Windows Graphics Capture 获取后方窗口的 GPU 图像，再通过 Direct3D 11 和 HLSL 完成背景合成、折射、色散和磨砂。Electron 与 React 负责设置界面、托盘和 GitHub 数据。
 
-当前为 **0.9.2-dev 预览版**，提供 Windows x64 便携程序。
+当前为 **0.10.0-dev 预览版**，提供 Windows x64 便携程序。
 
 ## 当前功能
 
@@ -32,7 +32,7 @@ StarGlass 是一个可自行配置的 Windows 桌面工具。双击打开玻璃�
 
 ## 使用
 
-1. 前往 [Releases](https://github.com/LoMoCatAp/StarGlass/releases)，下载 `StarGlass-0.9.2-dev-Windows.exe`。
+1. 前往 [Releases](https://github.com/LoMoCatAp/StarGlass/releases)，下载 `StarGlass-0.10.0-dev-Windows.exe`。
 2. 放在固定位置后双击运行，无需安装。更新时先从托盘退出旧版本，再运行新版。
 3. 右键面板或托盘图标打开设置，在「监控项目」添加 `owner/repo` 或 GitHub 仓库链接。
 4. 在「玻璃外观 → 配置哪个面板」选择默认外观或某个项目，调整后点击「应用设置」。
@@ -50,11 +50,11 @@ StarGlass 是一个可自行配置的 Windows 桌面工具。双击打开玻璃�
 
 ### 截图与录屏
 
-实时玻璃默认排除在系统截图与录屏之外，避免递归采到面板自身。打开「允许截图 / 录屏」后，背景会固定为快照并允许捕捉；关闭后恢复实时玻璃。
+面板默认可被系统截图和录屏捕捉，无需开启开关，背景保持实时更新。应用分别采集后方窗口的 GPU 图像并排除自身作为背景来源，避免递归反馈；旧版截图开关会自动迁移，不再使用固定快照。
 
 ## 当前限制
 
-- 支持 Windows x64，建议 Windows 11；桌面采集排除需要 Windows 10 2004 或更新版本。
+- 支持 Windows x64，建议 Windows 11；实时背景路径需要 Windows 10 2004 或更新版本；Windows 10 的系统采集边框行为尚未全面验证。
 - 多面板目前共享主面板所在显示器的背景。跨显示器、不同 DPI、多 GPU 以及锁屏恢复尚未全面验证。
 - 实际帧率受显示器、GPU、面板数量和尺寸影响。受保护内容或特定显示会话可能无法采集。
 - 面板是独立悬浮窗口，尚未嵌入 Explorer 桌面。当前程序未进行商业代码签名。
@@ -87,6 +87,7 @@ npm test
 npm run dist       # Windows x64 便携 EXE
 npm run pack       # Windows 目录版
 node scripts/package-smoke.cjs
+node scripts/direct-capture-smoke.cjs
 node scripts/rounded-outline-smoke.cjs
 node scripts/twelve-panels-smoke.cjs
 ```

@@ -267,16 +267,17 @@ const capsules=new CapsuleManager({exePath:PANEL_EXE,sharedName:gpuSharedName,po
   else if(name==='hide')capsules.hideRepo(repo);
  }});
 const captureCoordinator=new CaptureCoordinator({
- getBridges:()=>nativeActive?[['primary',bridge],...capsules.entries()]:[],isEnabled:()=>Boolean(state?.settings.allowScreenCapture&&nativeActive),
+ getBridges:()=>nativeActive?[['primary',bridge],...capsules.entries()]:[],
  onStatus:status=>{captureStatus=status;if(state)for(const w of [panel,settingsWindow])if(w&&!w.isDestroyed())w.webContents.send('state',snapshot());}
 });
 // Test-only hook: lets an external harness drive the SAME main-process path the
 // settings UI uses, so a settings change can be asserted end to end against the
-// native panel window (which cannot be screenshotted).  Off unless explicitly
+// native panel window.  Off unless explicitly
 // enabled, and it exposes nothing the renderer could not already reach.
 if (process.env.STARGLASS_TEST_HOOKS === '1') {
   global.__starglassTest = {
     snapshot,
+    sendNative:command=>bridge?.send(command),
     updateSettings,
     showSettings,
     showPanel,
@@ -284,7 +285,7 @@ if (process.env.STARGLASS_TEST_HOOKS === '1') {
     captureFrame: repo => (repo?capsules.entries().find(([id])=>id===`repo:${repo}`)?.[1]:bridge)?.send('HOST capture'),
     capsules:()=>capsules.entries().map(([id,b])=>({id,pid:b.child?.pid,connected:b.connected})),
     // Lets a harness assert the packaged app really spawned AND connected the
-    // native panel, which no screenshot can show.
+    // native panel.
     panelBridge: () => (bridge ? { connected: bridge.connected, exe: PANEL_EXE, pid: bridge.child?.pid } : null),
   };
 }

@@ -5,6 +5,7 @@
 #include "shared_desktop.h"
 
 namespace Glass {
+class LiveDesktop;
 
 class Backdrop {
 public:
@@ -33,6 +34,7 @@ public:
     void SetUIBlurSpread(float s) { ui_blur_amt_ = s < 0.0f ? 0.0f : (s > 12.0f ? 12.0f : s); }
 
 private:
+    LiveDesktop* live_=nullptr;
     SharedDesktop shared_;
     int snapshot_epoch_=0;
     struct RT {

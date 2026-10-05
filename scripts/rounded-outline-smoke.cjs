@@ -90,9 +90,13 @@ try {
    await app.evaluate((_,p)=>{const t=global.__starglassTest;t.updateSettings({...t.snapshot().settings,...p,allowScreenCapture:false});},patch);
    await expect.poll(()=>app.evaluate(()=>global.__starglassTest.snapshot().captureStatus)).toBe('live');
    const capture=suffix=>JSON.parse(execFileSync('powershell',['-NoProfile','-ExecutionPolicy','Bypass','-File',ps,'-PanelProcessId',String(pid),'-OutputFile',path.join(out,name+suffix+'.png')],{encoding:'utf8',windowsHide:true}));
-   const baseline=capture('-excluded');
+   await app.evaluate(()=>global.__starglassTest.sendNative('HOST hide'));
+   await new Promise(resolve=>setTimeout(resolve,150));
+   const baseline=capture('-hidden');
+   await app.evaluate(()=>global.__starglassTest.sendNative('HOST show'));
+   await new Promise(resolve=>setTimeout(resolve,150));
    await app.evaluate(()=>{const t=global.__starglassTest;t.updateSettings({...t.snapshot().settings,allowScreenCapture:true});});
-   await expect.poll(()=>app.evaluate(()=>global.__starglassTest.snapshot().captureStatus),{timeout:15000}).toBe('recordable');
+   await expect.poll(()=>app.evaluate(()=>global.__starglassTest.snapshot().captureStatus),{timeout:15000}).toBe('live');
    let result;
    await expect.poll(()=>{result=capture('');return name==='rectangle'?result.region===0:result.region===3&&!result.bottomLeft&&!result.bottomRight&&result.center;},{timeout:8000}).toBe(true);
    if(result.borderResult===0)assert.equal(result.border,0xfffffffe);

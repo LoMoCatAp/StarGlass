@@ -8,11 +8,9 @@
 // It carries no data logic of its own: the Electron main process owns GitHub
 // fetching and settings, and pushes them over loopback TCP (see SG_IPC_PORT).
 //
-// Why the built-in dump matters: Backdrop::Init calls
-// SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE), so no screen-capture API can
-// see the live glass window. Snapshot recording deliberately suspends desktop
-// acquisition before lifting that exclusion. SG_DUMP_FRAME can inspect the live
-// glass without changing display affinity.
+// Independent Windows Graphics Capture sources provide a live GPU background
+// without capturing our own panels. Normal screenshots can include the window.
+// SG_DUMP_FRAME remains available for renderer diagnostics.
 //
 // Environment:
 //   SG_W, SG_H, SG_RADIUS, SG_MARGIN, SG_FONT_PX, SG_X, SG_Y
@@ -158,7 +156,7 @@ static bool CreateDeviceD3D(HWND hwnd) {
     sd.Windowed = TRUE;
     sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-    UINT flags = 0;
+    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
     D3D_FEATURE_LEVEL fl;
     const D3D_FEATURE_LEVEL fla[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
     HRESULT res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
@@ -538,7 +536,7 @@ static void ApplyStateLine(const std::string& line) {
         else if (c == "capture") PushCmd(7);
         else if (c.compare(0,15,"capturePrepare ")==0) PushCmd(8,HostArg(c,"id",0));
         else if (c.compare(0,10,"captureOn ")==0) PushCmd(9,HostArg(c,"id",0));
-        else if (c == "captureOff") PushCmd(10);
+        else if (c == "captureOff" || c == "captureLive") PushCmd(10);
         else if (c.compare(0, 5, "move ") == 0)   PushCmd(4, HostArg(c, "x", 0), HostArg(c, "y", 0));
         else if (c.compare(0, 7, "resize ") == 0) PushCmd(5, HostArg(c, "w", 440), HostArg(c, "h", 560));
         else if (c.compare(0, 5, "font ") == 0)   PushCmd(6, HostArg(c, "px", 20), HostArg(c, "bold", 0));
@@ -674,7 +672,7 @@ static void UpdateMiniTip(const PanelState& st) {
         g_miniTip=::CreateWindowExW(WS_EX_TOPMOST|WS_EX_TOOLWINDOW,TOOLTIPS_CLASSW,nullptr,WS_POPUP|TTS_ALWAYSTIP|TTS_NOPREFIX,
             CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,g_hwnd,nullptr,::GetModuleHandleW(nullptr),nullptr);
         if(!g_miniTip) return;
-        ::SetWindowDisplayAffinity(g_miniTip,0x11);
+        ::SetWindowDisplayAffinity(g_miniTip,WDA_NONE);
         ::SetWindowTheme(g_miniTip,L"",L"");
         ::SendMessageW(g_miniTip,TTM_SETTIPBKCOLOR,RGB(228,240,235),0);
         ::SendMessageW(g_miniTip,TTM_SETTIPTEXTCOLOR,RGB(27,49,52),0);
@@ -870,14 +868,9 @@ static void AddTextShadowed(ImDrawList* dl, ImFont* font, float size, ImVec2 pos
 // Called from the main loop and from WndProc's modal-loop timer.  Everything the
 // panel draws happens here.
 static void UpdateBackdropFrame() {
-    // Background production is independent of this panel's drawing FPS. One
-    // duplication session serves all windows, including faster consumers.
-    const bool prepareReady=g_prepareRound<0||::GetTickCount()-g_prepareSince>=250;
-    if(!g_capturePaused&&prepareReady&&(::IsWindowVisible(g_hwnd)||g_prepareRound>=0))g_backdrop.Capture();
-    if(g_prepareRound>=0&&!g_capturePaused&&prepareReady&&g_backdrop.frameSerial()>g_prepareFrame&&g_backdrop.snapshotReady()){
-        g_capturePaused=true;g_backdrop.SuspendCapture();char cmd[64];std::snprintf(cmd,sizeof(cmd),"CMD snapshotReady id=%d",g_prepareRound);PanelSend(cmd);
-    }
+    if(::IsWindowVisible(g_hwnd)||g_backdrop.sharedProducer())g_backdrop.Capture();
 }
+
 static void RenderFrame() {
     if (!g_swap || !ImGui::GetCurrentContext()) return;
     if(g_backdrop.sharedProducer())UpdateBackdropFrame();
@@ -1063,7 +1056,7 @@ int main(int, char**) {
 
     if (!g_renderer.Init(g_dev, g_ctx)) return 1;
     Glass::g = &g_renderer;
-    g_backdrop.Init(g_dev, g_ctx, hwnd);   // also sets WDA_EXCLUDEFROMCAPTURE
+    if(!g_backdrop.Init(g_dev,g_ctx,hwnd)){std::fprintf(stderr,"[panel] live background initialization failed\n");return 2;}
 
     D3D11_TEXTURE2D_DESC logoDesc={}; logoDesc.Width=kLogoSize; logoDesc.Height=kLogoSize;
     logoDesc.MipLevels=1; logoDesc.ArraySize=1; logoDesc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -1150,14 +1143,10 @@ int main(int, char**) {
                 break;
             case 7: g_captureRequested=true; break;
             case 8:
-                ::SetWindowDisplayAffinity(hwnd,0x11);if(g_miniTip)::SetWindowDisplayAffinity(g_miniTip,0x11);
-                g_capturePaused=false;g_prepareRound=hc.a;g_prepareSince=::GetTickCount();
-                g_prepareFrame=g_backdrop.frameSerial();g_backdrop.BeginSnapshot(hc.a);break;
             case 9:
-                if(g_capturePaused&&g_prepareRound==hc.a){if(!::SetWindowDisplayAffinity(hwnd,0)){char cmd[64];std::snprintf(cmd,sizeof(cmd),"CMD captureError id=%d",g_prepareRound);PanelSend(cmd);}if(g_miniTip)::SetWindowDisplayAffinity(g_miniTip,0);}
-                break;
             case 10:
-                ::SetWindowDisplayAffinity(hwnd,0x11);if(g_miniTip)::SetWindowDisplayAffinity(g_miniTip,0x11);
+                ::SetWindowDisplayAffinity(hwnd,WDA_NONE);
+                if(g_miniTip)::SetWindowDisplayAffinity(g_miniTip,WDA_NONE);
                 g_capturePaused=false;g_prepareRound=-1;g_backdrop.ResumeCapture();break;
             default: break;
             }

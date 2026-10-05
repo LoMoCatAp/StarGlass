@@ -10,8 +10,11 @@ commit `00c2b2b19eb5523abde473b2c08220326d4146d4`.
   MIT license in `imgui/LICENSE.txt`. The upstream `imconfig.h` enables FreeType.
 - `liquidDX11/glass/`: glass surface, desktop capture, shaders and widget fragments.
   MIT license; full notice in the root `THIRD_PARTY_NOTICES.md`.
-  StarGlass modifies capture exclusion, raw desktop sampling, material parameters,
-  and adds `shared_desktop.h` for a shared GPU background across up to 12 windows.
+  StarGlass replaces desktop duplication with `live_desktop.h` (independent
+  Windows Graphics Capture window frames composited on the GPU), so panels can
+  be screenshotted without feedback or a frozen background. It also modifies
+  raw sampling and material parameters, and adds `shared_desktop.h` for a shared
+  GPU background across up to 12 windows.
 - `freetype/`: upstream FreeType headers and x64 static library. Distributed under
   the FTL option, with full license texts in `FTL.TXT` and `LICENSE.TXT`.
 

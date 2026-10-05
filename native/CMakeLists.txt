@@ -20,6 +20,7 @@ add_executable(glasspanel
     glass-panel/panel.rc
 )
 target_compile_features(glasspanel PRIVATE cxx_std_17)
+set_property(TARGET glasspanel PROPERTY CXX_STANDARD 17)
 target_include_directories(glasspanel PRIVATE
     ${IMGUI} ${IMGUI}/backends ${GLASS} ${FREETYPE}/include
 )
@@ -29,5 +30,5 @@ if(MSVC)
 endif()
 target_link_libraries(glasspanel PRIVATE
     comctl32 uxtheme d3d11 d3dcompiler dxgi dwmapi user32 gdi32 ole32
-    shell32 advapi32 ws2_32 winmm ${FREETYPE}/win64/freetype.lib
+    shell32 advapi32 ws2_32 winmm windowsapp windowscodecs ${FREETYPE}/win64/freetype.lib
 )

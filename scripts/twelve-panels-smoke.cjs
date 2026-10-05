@@ -72,15 +72,15 @@ const inkCount=pixels=>{let n=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>
   assert.ok(dark.every(f=>f.brightness<80),`Some panels froze or failed to consume a GPU frame: ${dark.map(f=>f.brightness)}`);
   await app.evaluate(()=>global.__twelveBackdrop.webContents.executeJavaScript('document.body.style.background="#fafafa"'));
   await pause(1500);const restored=await captureAll();assert.ok(restored.every(f=>f.brightness>170));
-  // All twelve workers must also complete the snapshot barrier.
+  // Old capture toggles must not freeze or exclude any of the twelve workers.
   await app.evaluate(()=>{const t=global.__starglassTest;t.updateSettings({...t.snapshot().settings,allowScreenCapture:true});});
-  await expect.poll(()=>app.evaluate(()=>global.__starglassTest.snapshot().captureStatus),{timeout:15000}).toBe('recordable');
+  await expect.poll(()=>app.evaluate(()=>global.__starglassTest.snapshot().captureStatus),{timeout:15000}).toBe('live');
   await app.evaluate(()=>{const t=global.__starglassTest;t.updateSettings({...t.snapshot().settings,allowScreenCapture:false});});
   await app.evaluate((_,repo)=>global.__starglassTest.showSettings(repo),repos[1]);
   await expect(page.getByRole('combobox',{name:'配置面板',exact:true})).toHaveValue(repos[1]);
   await page.getByRole('button',{name:'恢复默认外观',exact:true}).click();await page.getByRole('button',{name:'应用设置',exact:true}).click();
   await expect.poll(()=>JSON.parse(fs.readFileSync(path.join(data,'state.json'),'utf8')).settings.panelOverrides['demo/repo02']).toBeUndefined();
   await page.getByRole('button',{name:'关闭设置',exact:true}).click();await pause(300);const reset=await captureAll();assert.equal(reset[1].w,Math.round(320*dpi));
-  console.log(JSON.stringify({passed:true,packaged,twelveLivePanels:true,sharedGPU:true,independentSettings:true,miniGlassOnly:true,resetAppearance:true,twelveRecordingBarrier:true,out}));
+  console.log(JSON.stringify({passed:true,packaged,twelveLivePanels:true,sharedGPU:true,independentSettings:true,miniGlassOnly:true,resetAppearance:true,twelveLiveCapture:true,out}));
  }finally{fs.writeFileSync(path.join(out,'run.log'),log);await app.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

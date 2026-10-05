@@ -77,7 +77,7 @@ if($OutputFile) {
   await change({customSize:false,multiMini:false});
   await expect.poll(()=>app.evaluate(()=>global.__starglassTest.capsules().length)).toBe(0);
   await change({allowScreenCapture:true});
-  await expect.poll(()=>app.evaluate(()=>global.__starglassTest.snapshot().captureStatus),{timeout:15000}).toBe('recordable');
+  await expect.poll(()=>app.evaluate(()=>global.__starglassTest.snapshot().captureStatus),{timeout:15000}).toBe('live');
   // Unlike an internal buffer dump, this observes real system capture visibility.
   await expect.poll(()=>geometry(true).dark,{timeout:8000}).toBeGreaterThan(20);
   await change({allowScreenCapture:false});

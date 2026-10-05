@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include "live_desktop.h"
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -19,15 +20,7 @@ namespace Glass {
 bool Backdrop::Init(ID3D11Device* device, ID3D11DeviceContext* ctx, HWND hwnd) {
     dev_ = device; ctx_ = ctx; hwnd_ = hwnd;
     shared_.Init(device,ctx);
-    {
-        // GLASS_CAPTURE_EXCLUDE=0 makes the overlay visible to screen-capture
-        // tooling.  Used only to diagnose "the screen looks frozen while the back
-        // buffer is demonstrably fresh", which points at DWM, not at rendering.
-        char b[8] = {};
-        const bool exclude = (::GetEnvironmentVariableA("GLASS_CAPTURE_EXCLUDE", b, sizeof(b)) == 0)
-                             || b[0] != '0';
-        if (exclude) ::SetWindowDisplayAffinity(hwnd_, WDA_EXCLUDEFROMCAPTURE);
-    }
+    ::SetWindowDisplayAffinity(hwnd_, WDA_NONE);
     if (!CompileBlurShaders()) { Shutdown(); return false; }
     { D3D11_BUFFER_DESC bd = {};
       bd.ByteWidth = 16; bd.Usage = D3D11_USAGE_DYNAMIC;
@@ -48,7 +41,10 @@ bool Backdrop::Init(ID3D11Device* device, ID3D11DeviceContext* ctx, HWND hwnd) {
     { D3D11_DEPTH_STENCIL_DESC dd = {};
       dd.DepthEnable = FALSE; dd.StencilEnable = FALSE;
       if (FAILED(dev_->CreateDepthStencilState(&dd, &depth_off_))) { Shutdown(); return false; } }
-    if(!shared_.consumer())CreateDuplication();
+    if(!shared_.consumer()){
+        live_=new LiveDesktop();
+        if(!live_->Init(dev_,ctx_,hwnd_)){delete live_;live_=nullptr;return false;}
+    }
     if (!up_[0].srv) {
         int W = ::GetSystemMetrics(SM_CXSCREEN);
         int H = ::GetSystemMetrics(SM_CYSCREEN);
@@ -61,6 +57,7 @@ bool Backdrop::Init(ID3D11Device* device, ID3D11DeviceContext* ctx, HWND hwnd) {
 }
 
 void Backdrop::Shutdown() {
+    delete live_;live_=nullptr;
     shared_.Shutdown();
     ReleaseDuplication();
     ReleaseChain();
@@ -288,6 +285,15 @@ void Backdrop::Capture() {
         }
         out_x_=frame.x;out_y_=frame.y;ctx_->CopyResource(desktop_.tex,frame.texture);shared_.FinishRead();
         ++frame_serial_;have_first_=true;RunBlur();return;
+    }
+    if(live_){
+        ID3D11Texture2D* frame=live_->Capture();if(!frame)return;
+        D3D11_TEXTURE2D_DESC desc{};frame->GetDesc(&desc);
+        if((int)desc.Width!=out_w_||(int)desc.Height!=out_h_)if(!CreateChain((int)desc.Width,(int)desc.Height))return;
+        if(!desktop_.tex||desktop_.w!=(int)desc.Width||desktop_.h!=(int)desc.Height||desktop_fmt_!=desc.Format){desktop_fmt_=desc.Format;if(!CreateRT(desktop_,(int)desc.Width,(int)desc.Height,desc.Format,false,true))return;}
+        out_x_=live_->bounds().left;out_y_=live_->bounds().top;
+        ctx_->CopyResource(desktop_.tex,frame);++frame_serial_;have_first_=true;RunBlur();
+        shared_.Publish(desktop_.tex,out_x_,out_y_,frame_serial_,snapshot_epoch_);return;
     }
     // Diagnostics: a frozen glass surface is almost always duplication that
     // silently stopped producing frames, not a stalled render loop.  Set
