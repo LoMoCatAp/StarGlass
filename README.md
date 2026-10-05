@@ -16,7 +16,7 @@ StarGlass 是一个可自行配置的 Windows 桌面工具。双击打开玻璃�
 
 玻璃背景来自实时桌面，使用 Windows Graphics Capture 获取后方窗口的 GPU 图像，再通过 Direct3D 11 和 HLSL 完成背景合成、折射、色散和磨砂。Electron 与 React 负责设置界面、托盘和 GitHub 数据。
 
-当前为 **0.10.0-dev 预览版**，提供 Windows x64 便携程序。
+当前为 **0.10.1-dev 预览版**，提供 Windows x64 便携程序。
 
 ## 当前功能
 
@@ -32,7 +32,7 @@ StarGlass 是一个可自行配置的 Windows 桌面工具。双击打开玻璃�
 
 ## 使用
 
-1. 前往 [Releases](https://github.com/LoMoCatAp/StarGlass/releases)，下载 `StarGlass-0.10.0-dev-Windows.exe`。
+1. 前往 [Releases](https://github.com/LoMoCatAp/StarGlass/releases)，下载 `StarGlass-0.10.1-dev-Windows.exe`。
 2. 放在固定位置后双击运行，无需安装。更新时先从托盘退出旧版本，再运行新版。
 3. 右键面板或托盘图标打开设置，在「监控项目」添加 `owner/repo` 或 GitHub 仓库链接。
 4. 在「玻璃外观 → 配置哪个面板」选择默认外观或某个项目，调整后点击「应用设置」。
@@ -50,7 +50,7 @@ StarGlass 是一个可自行配置的 Windows 桌面工具。双击打开玻璃�
 
 ### 截图与录屏
 
-面板默认可被系统截图和录屏捕捉，无需开启开关，背景保持实时更新。应用分别采集后方窗口的 GPU 图像并排除自身作为背景来源，避免递归反馈；旧版截图开关会自动迁移，不再使用固定快照。
+面板默认可被系统截图和录屏捕捉，无需开启开关，背景保持实时更新。应用分别采集后方窗口的 GPU 图像并排除自身作为背景来源，避免递归反馈；旧版截图开关会自动迁移，不再使用固定快照。合成时保留窗口整体透明度与色键，透明覆盖窗口不再把动态壁纸盖成黑色。已在 Wallpaper Engine 2.8.42 的场景壁纸上验证，其他壁纸类型尚未全面验证。
 
 ## 当前限制
 
@@ -93,6 +93,14 @@ node scripts/twelve-panels-smoke.cjs
 ```
 
 生成文件位于 `release/`。GUI 验证使用独立配置，输出保存在 `test-results/`；不会修改日常使用的数据。自动验收主要针对开发程序和打包目录版，便携 EXE 的自解压流程尚未单独自动驱动。
+
+透明覆盖窗口的回归测试另需构建专用夹具；该窗口仅在测试期间运行，不参与应用打包：
+
+```powershell
+cmake -S tests/native -B .test-data/native-fixtures -G "Visual Studio 17 2022" -A x64
+cmake --build .test-data/native-fixtures --config Release
+node scripts/layered-capture-smoke.cjs
+```
 
 ## 隐私与本地数据
 

@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(StarGlassCaptureFixtures LANGUAGES CXX)
+add_executable(layered-overlay layered-overlay.cpp)
+target_compile_features(layered-overlay PRIVATE cxx_std_17)
+target_compile_definitions(layered-overlay PRIVATE UNICODE _UNICODE)
+target_link_libraries(layered-overlay PRIVATE user32 gdi32)

@@ -46,6 +46,15 @@ class LiveDesktop {
     UINT imageW_=0,imageH_=0; DESKTOP_WALLPAPER_POSITION position_=DWPOS_FILL;
     COLORREF desktopColor_=RGB(0,0,0);
     static bool PanelWindow(HWND h){wchar_t cls[80]={};::GetClassNameW(h,cls,80);return std::wcscmp(cls,L"StarGlassPanel")==0;}
+    struct Layer {float alpha=1;COLORREF key=0;bool keyed=false;};
+    static Layer WindowLayer(HWND h){
+        Layer layer;COLORREF key=0;BYTE alpha=255;DWORD flags=0;
+        if((::GetWindowLongPtrW(h,GWL_EXSTYLE)&WS_EX_LAYERED)&&::GetLayeredWindowAttributes(h,&key,&alpha,&flags)){
+            if(flags&LWA_ALPHA)layer.alpha=alpha/255.f;
+            if(flags&LWA_COLORKEY){layer.key=key;layer.keyed=true;}
+        }
+        return layer;
+    }
     static bool Bounds(HWND h,RECT& r){
         if(!::IsWindowVisible(h)||::IsIconic(h))return false;
         DWORD cloaked=0;::DwmGetWindowAttribute(h,DWMWA_CLOAKED,&cloaked,sizeof(cloaked));if(cloaked)return false;
@@ -55,7 +64,8 @@ class LiveDesktop {
     static BOOL CALLBACK FindPanels(HWND h,LPARAM data){auto self=(LiveDesktop*)data;RECT r;if(PanelWindow(h)&&Bounds(h,r))self->panels_.push_back(r);return TRUE;}
     static BOOL CALLBACK FindSources(HWND h,LPARAM data){
         auto self=(LiveDesktop*)data;RECT r;
-        if(PanelWindow(h)||!Bounds(h,r))return TRUE;
+        // A fully transparent HWND can still yield an opaque WGC bitmap.
+        if(PanelWindow(h)||!Bounds(h,r)||WindowLayer(h).alpha<=0)return TRUE;
         wchar_t cls[80]={};::GetClassNameW(h,cls,80);
         if(std::wcscmp(cls,L"tooltips_class32")==0)return TRUE;
         RECT overlap;if(!::IntersectRect(&overlap,&r,&self->monitor_))return TRUE;
@@ -74,6 +84,10 @@ class LiveDesktop {
             source->session=source->pool.CreateCaptureSession(item);
             try{source->session.IsCursorCaptureEnabled(false);source->session.IsBorderRequired(false);}catch(...){}
             source->session.StartCapture();sources_.emplace(h,std::move(source));
+            char trace[8]={};if(::GetEnvironmentVariableA("SG_TRACE_STATE",trace,sizeof(trace))){
+                wchar_t cls[80]={};RECT r={};::GetClassNameW(h,cls,80);::GetWindowRect(h,&r);
+                std::printf("[live-desktop] source class=%ls bounds=%ld,%ld,%ld,%ld style=0x%08lx ex=0x%08lx\n",cls,r.left,r.top,r.right,r.bottom,(unsigned long)::GetWindowLongPtrW(h,GWL_STYLE),(unsigned long)::GetWindowLongPtrW(h,GWL_EXSTYLE));std::fflush(stdout);
+            }
         }catch(winrt::hresult_error const& e){std::printf("[live-desktop] window source unavailable hr=0x%08lx\n",(unsigned long)e.code().value);}
     }
     void Reconcile(){
@@ -134,12 +148,14 @@ class LiveDesktop {
         const D3D11_SUBRESOURCE_DATA initial{pixels.data(),imageW_*4,0};
         if(SUCCEEDED(dev_->CreateTexture2D(&desc,&initial,&wallpaper_)))dev_->CreateShaderResourceView(wallpaper_.Get(),nullptr,&wallpaperSrv_);
     }
-    void Draw(ID3D11ShaderResourceView* srv,float x,float y,float w,float h){
+    void Draw(ID3D11ShaderResourceView* srv,float x,float y,float w,float h,Layer layer){
         if(!srv||w<=0||h<=0)return;
         D3D11_MAPPED_SUBRESOURCE map{};if(FAILED(ctx_->Map(constants_.Get(),0,D3D11_MAP_WRITE_DISCARD,0,&map)))return;
         const float ow=(float)(monitor_.right-monitor_.left),oh=(float)(monitor_.bottom-monitor_.top);
-        float rect[4]={x/ow*2-1,1-y/oh*2,w/ow*2,-h/oh*2};std::memcpy(map.pData,rect,sizeof(rect));ctx_->Unmap(constants_.Get(),0);
-        ID3D11Buffer* cb=constants_.Get();ctx_->VSSetConstantBuffers(0,1,&cb);ctx_->PSSetShaderResources(0,1,&srv);ctx_->Draw(6,0);
+        float data[12]={x/ow*2-1,1-y/oh*2,w/ow*2,-h/oh*2,
+            GetRValue(layer.key)/255.f,GetGValue(layer.key)/255.f,GetBValue(layer.key)/255.f,layer.keyed?1.f:0.f,
+            layer.alpha,0,0,0};std::memcpy(map.pData,data,sizeof(data));ctx_->Unmap(constants_.Get(),0);
+        ID3D11Buffer* cb=constants_.Get();ctx_->VSSetConstantBuffers(0,1,&cb);ctx_->PSSetConstantBuffers(0,1,&cb);ctx_->PSSetShaderResources(0,1,&srv);ctx_->Draw(6,0);
     }
 public:
     bool Init(ID3D11Device* dev,ID3D11DeviceContext* ctx,HWND hwnd){
@@ -149,12 +165,19 @@ public:
             if(!Session::IsSupported())return false;
             Ptr<IDXGIDevice> dxgi;winrt::check_hresult(dev_->QueryInterface(IID_PPV_ARGS(&dxgi)));
             winrt::com_ptr<IInspectable> inspectable;winrt::check_hresult(CreateDirect3D11DeviceFromDXGIDevice(dxgi.Get(),inspectable.put()));device_=inspectable.as<Device>();
-            const char* shader=R"(cbuffer Region:register(b0){float4 rect;} struct V{float4 p:SV_POSITION;float2 uv:TEXCOORD0;};
+            const char* shader=R"(cbuffer Region:register(b0){float4 rect;float4 colorKey;float4 layer;} struct V{float4 p:SV_POSITION;float2 uv:TEXCOORD0;};
 V VS(uint id:SV_VertexID){float2 uv[6]={float2(0,0),float2(1,0),float2(0,1),float2(0,1),float2(1,0),float2(1,1)};V v;v.uv=uv[id];v.p=float4(rect.xy+v.uv*rect.zw,0,1);return v;}
-Texture2D image:register(t0);SamplerState smp:register(s0);float4 PS(V v):SV_TARGET{return image.Sample(smp,v.uv);})";
+Texture2D image:register(t0);SamplerState smp:register(s0);
+float4 Keyed(int2 p){float4 c=image.Load(int3(p,0));return all(abs(c.rgb-colorKey.rgb)<0.5/255.0)?float4(0,0,0,0):c;}
+float4 PS(V v):SV_TARGET{
+    float4 c=image.Sample(smp,v.uv);
+    if(colorKey.a>0){uint w,h;image.GetDimensions(w,h);float2 p=v.uv*float2(w,h)-0.5;int2 i=(int2)floor(p);float2 t=frac(p);int2 hi=int2(w-1,h-1);
+        c=lerp(lerp(Keyed(clamp(i,int2(0,0),hi)),Keyed(clamp(i+int2(1,0),int2(0,0),hi)),t.x),lerp(Keyed(clamp(i+int2(0,1),int2(0,0),hi)),Keyed(clamp(i+int2(1,1),int2(0,0),hi)),t.x),t.y);}
+    return c*layer.x;
+})";
             Ptr<ID3DBlob> vb,pb;winrt::check_hresult(D3DCompile(shader,std::strlen(shader),nullptr,nullptr,nullptr,"VS","vs_5_0",0,0,&vb,nullptr));winrt::check_hresult(D3DCompile(shader,std::strlen(shader),nullptr,nullptr,nullptr,"PS","ps_5_0",0,0,&pb,nullptr));
             winrt::check_hresult(dev_->CreateVertexShader(vb->GetBufferPointer(),vb->GetBufferSize(),nullptr,&vs_));winrt::check_hresult(dev_->CreatePixelShader(pb->GetBufferPointer(),pb->GetBufferSize(),nullptr,&ps_));
-            D3D11_BUFFER_DESC bd{};bd.ByteWidth=16;bd.Usage=D3D11_USAGE_DYNAMIC;bd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;bd.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE;winrt::check_hresult(dev_->CreateBuffer(&bd,nullptr,&constants_));
+            D3D11_BUFFER_DESC bd{};bd.ByteWidth=48;bd.Usage=D3D11_USAGE_DYNAMIC;bd.BindFlags=D3D11_BIND_CONSTANT_BUFFER;bd.CPUAccessFlags=D3D11_CPU_ACCESS_WRITE;winrt::check_hresult(dev_->CreateBuffer(&bd,nullptr,&constants_));
             D3D11_SAMPLER_DESC sd{};sd.Filter=D3D11_FILTER_MIN_MAG_MIP_LINEAR;sd.AddressU=sd.AddressV=sd.AddressW=D3D11_TEXTURE_ADDRESS_CLAMP;dev_->CreateSamplerState(&sd,&sampler_);
             D3D11_BLEND_DESC blend{};auto& b=blend.RenderTarget[0];b.BlendEnable=TRUE;b.SrcBlend=D3D11_BLEND_ONE;b.DestBlend=D3D11_BLEND_INV_SRC_ALPHA;b.BlendOp=D3D11_BLEND_OP_ADD;b.SrcBlendAlpha=D3D11_BLEND_ONE;b.DestBlendAlpha=D3D11_BLEND_INV_SRC_ALPHA;b.BlendOpAlpha=D3D11_BLEND_OP_ADD;b.RenderTargetWriteMask=D3D11_COLOR_WRITE_ENABLE_ALL;dev_->CreateBlendState(&blend,&blend_);
             D3D11_RASTERIZER_DESC rs{};rs.FillMode=D3D11_FILL_SOLID;rs.CullMode=D3D11_CULL_NONE;rs.DepthClipEnable=TRUE;dev_->CreateRasterizerState(&rs,&raster_);
@@ -188,10 +211,10 @@ Texture2D image:register(t0);SamplerState smp:register(s0);float4 PS(V v):SV_TAR
         ctx_->IASetInputLayout(nullptr);ctx_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);ctx_->VSSetShader(vs_.Get(),nullptr,0);ctx_->PSSetShader(ps_.Get(),nullptr,0);
         ctx_->OMSetBlendState(blend_.Get(),nullptr,0xffffffff);ctx_->OMSetDepthStencilState(depth_.Get(),0);ctx_->RSSetState(raster_.Get());ID3D11SamplerState* sampler=sampler_.Get();ctx_->PSSetSamplers(0,1,&sampler);
         if(wallpaperSrv_){
-            if(position_==DWPOS_TILE){for(float y=0;y<height;y+=imageH_)for(float x=0;x<width;x+=imageW_)Draw(wallpaperSrv_.Get(),x,y,(float)imageW_,(float)imageH_);}
-            else{float w=width,h=height;if(position_==DWPOS_CENTER){w=(float)imageW_;h=(float)imageH_;}else if(position_==DWPOS_FILL||position_==DWPOS_FIT){const float scale=position_==DWPOS_FIT?std::min(width/imageW_,height/imageH_):std::max(width/imageW_,height/imageH_);w=imageW_*scale;h=imageH_*scale;}Draw(wallpaperSrv_.Get(),(width-w)*.5f,(height-h)*.5f,w,h);}
+            if(position_==DWPOS_TILE){for(float y=0;y<height;y+=imageH_)for(float x=0;x<width;x+=imageW_)Draw(wallpaperSrv_.Get(),x,y,(float)imageW_,(float)imageH_,Layer{});}
+            else{float w=width,h=height;if(position_==DWPOS_CENTER){w=(float)imageW_;h=(float)imageH_;}else if(position_==DWPOS_FILL||position_==DWPOS_FIT){const float scale=position_==DWPOS_FIT?std::min(width/imageW_,height/imageH_):std::max(width/imageW_,height/imageH_);w=imageW_*scale;h=imageH_*scale;}Draw(wallpaperSrv_.Get(),(width-w)*.5f,(height-h)*.5f,w,h,Layer{});}
         }
-        for(HWND hwnd:order_){auto it=sources_.find(hwnd);if(it==sources_.end())continue;auto& s=*it->second;RECT r{};if(!s.ready||!Bounds(hwnd,r))continue;Draw(s.srv.Get(),(float)(r.left-monitor_.left),(float)(r.top-monitor_.top),(float)(r.right-r.left),(float)(r.bottom-r.top));}
+        for(HWND hwnd:order_){auto it=sources_.find(hwnd);if(it==sources_.end())continue;auto& s=*it->second;RECT r{};if(!s.ready||!Bounds(hwnd,r))continue;Draw(s.srv.Get(),(float)(r.left-monitor_.left),(float)(r.top-monitor_.top),(float)(r.right-r.left),(float)(r.bottom-r.top),WindowLayer(hwnd));}
         ctx_->PSSetShaderResources(0,3,none);ctx_->OMSetRenderTargets(0,nullptr,nullptr);return output_.Get();
     }
     const RECT& bounds()const{return monitor_;}
