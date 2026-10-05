@@ -2,7 +2,7 @@ param(
   [Parameter(Mandatory = $true)][string]$Config,
   [Parameter(Mandatory = $true)][string]$OutRaw,
   [int]$At = 900,
-  [string]$ExeDir = 'C:\Files\Codes\Projects\Github\StarGlass\references\liquidDX11-source\build\Release'
+  [string]$ExeDir
 )
 # Dump one composed frame of the liquid-glass overlay.
 #
@@ -14,6 +14,12 @@ param(
 #
 # ASCII-only on purpose: Windows PowerShell 5.1 reads BOM-less .ps1 as ANSI.
 $ErrorActionPreference = 'Stop'
+# This optional probe runs the upstream demo, not the shipped StarGlass panel.
+# Resolve the local reference checkout relative to this script, or accept -ExeDir.
+if (-not $ExeDir) {
+  $projectRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+  $ExeDir = Join-Path $projectRoot 'references\liquidDX11-source\build\Release'
+}
 
 Add-Type @"
 using System;
