@@ -1,0 +1,59 @@
+/* Settings own their palette; the desktop glass keeps its independent material. */
+.settings-shell{--bg:#f3f6f5;--side:#e7eeeb;--surface:#ffffffb8;--raised:#edf3ef;--line:#d7e2dc;--text:#263e34;--muted:#61796d;--subtle:#71877c;--accent:#286e58;--selected:#dcece3;--field:#f8fbf9;--button:#346e61;color:var(--text);background:var(--bg);color-scheme:light}
+.settings-shell[data-theme=dark]{--bg:#111a20;--side:#142027;--surface:#1b2931;--raised:#22343d;--line:#30434c;--text:#e4eee9;--muted:#b0c3bc;--subtle:#91aaa0;--accent:#92d7b9;--selected:#29463e;--field:#15232b;--button:#367962;color-scheme:dark}
+.settings-shell .sidebar{background:var(--side);border-color:var(--line)}
+.settings-shell .settings-card{background:var(--surface);border-color:var(--line);box-shadow:0 6px 20px #00000004}
+.settings-shell .settings-footer{background:var(--side);border-color:var(--line)}
+.settings-shell :is(.page-heading h1,.card-heading h2,.row-label strong,.material-options strong,.project-item strong,.sidebar .brand>span){color:var(--text)}
+.settings-shell :is(.sidebar nav button,.card-heading,.slider-row>div,.glass-performance,.row-label,.project-numbers span,.settings-titlebar,.preview-title,.swatches button,.sidebar-bottom>strong){color:var(--muted)}
+.settings-shell :is(.sidebar-label,.sidebar-bottom>span,.brand small,.breadcrumb,.page-heading p,.eyebrow,.card-heading>span,.slider-row p,.capture-note,.row-label p,.hint,.info-note,.preview-note,.preview-title>span:last-child,.settings-footer>span,.material-options small,.project-item>div>span,.sync-status,.app-version){color:var(--subtle)}
+.settings-shell :is(.app-version,.setting-row,.project-item,.optical-controls){border-color:var(--line)}
+.settings-shell .sidebar nav button.selected{background:var(--selected);color:var(--accent);box-shadow:none}
+.settings-shell :is(.text-button,.swatches button.chosen){color:var(--accent)}
+.settings-shell .nav-dot{background:var(--accent)}
+.settings-shell .material-options>button{background:var(--raised);border-color:var(--line)}
+.settings-shell .material-options>button.chosen{background:var(--selected);border-color:var(--accent);box-shadow:none}
+.settings-shell .material-options>button>svg{color:var(--accent)}
+.settings-shell :is(.setting-row select,.glass-performance select,.slider-row output){background:var(--raised);border-color:var(--line);color:var(--muted)}
+.settings-shell :is(.add-repo input,.token-row input){background:var(--field);border-color:var(--line);color:var(--text);min-width:0}
+.settings-shell input::placeholder{color:var(--subtle)}
+.settings-shell .secondary{background:var(--raised);border-color:var(--line);color:var(--text)}
+.settings-shell .primary{background:var(--button);color:#fff}
+.settings-shell .primary:hover{filter:brightness(1.13)}
+.settings-shell .project-icon{background:var(--raised);color:var(--accent)}
+.settings-shell .slider-row input{background:linear-gradient(90deg,var(--accent) var(--range),var(--line) var(--range))}
+.settings-shell .toggle{background:var(--line);width:38px}
+.settings-shell .toggle.on{background:var(--button)}
+.settings-shell .little-glass{background:var(--raised);color:var(--accent);border-color:var(--line);box-shadow:inset 0 1px 0 #ffffff24}
+.settings-shell .swatches button>span{border-color:var(--surface)}
+.settings-shell .error-text{color:#c88b57}
+.settings-shell[data-theme=dark] .error-text{color:#f2b886}
+.settings-shell .theme-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.settings-shell .theme-options button,.settings-shell .project-active{background:var(--raised);color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:9px 4px;font-size:12px}
+.settings-shell .theme-options .chosen,.settings-shell .project-active.chosen{background:var(--selected);border-color:var(--accent);color:var(--accent)}
+.settings-shell .theme-hint{margin:14px 0 0;font-size:11px;line-height:1.7}
+.settings-shell .project-active{margin-left:auto;flex-shrink:0;padding:7px 10px;font-size:11px}
+.settings-shell .project-numbers{margin-left:0}
+.settings-shell .setting-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px}
+.settings-shell .row-label{min-width:0;align-items:flex-start}
+.settings-shell .row-label>svg{flex-shrink:0;margin-top:2px}
+.settings-shell .row-label p{line-height:1.7}
+.settings-shell .glass-performance{display:grid;grid-template-columns:minmax(0,1fr) 148px;gap:12px}
+.settings-shell .glass-performance select{width:100%;padding:8px}
+.settings-shell .slider-row>div{align-items:center;font-size:12px;margin-bottom:14px}
+.settings-shell .slider-row output{font-size:11px;min-width:54px}
+.settings-shell .slider-row p,.settings-shell .capture-note{font-size:11px}
+.settings-shell .card-heading h2{font-size:14px;font-weight:600}
+.settings-shell .material-options strong{font-size:12px}.settings-shell .material-options small{font-size:10px}
+.settings-shell .page-heading p{font-size:12px;line-height:1.7}
+.settings-shell .settings-footer>span{max-width:50%;font-size:11px}
+.settings-shell :is(button,input,select):focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.settings-shell .icon-button:hover{background:var(--selected)}
+.settings-shell .settings-scroll{scrollbar-color:var(--line) transparent}
+.settings-shell .sidebar nav button{font-size:13px}
+.settings-shell .preview-title{font-size:10px}
+.settings-shell .preview-note{font-size:11px;text-align:center}
+
+.settings-shell .brand-author{font-size:11px;letter-spacing:0;color:inherit;text-decoration:none;-webkit-app-region:no-drag}
+.settings-shell .brand-author:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.settings-shell .brand-author:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:3px}

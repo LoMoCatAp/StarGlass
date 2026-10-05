@@ -1,0 +1,73 @@
+const { _electron: electron, expect } = require('@playwright/test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const fs = require('node:fs');
+(async()=>{
+  const root=path.join(__dirname,'..');
+  const dataDir=path.join(root,'.test-data',`smoke-${Date.now()}`);
+  const output=path.join(root,'test-results');fs.mkdirSync(output,{recursive:true});
+  // This suite inspects BrowserWindow behavior; native coverage lives in content-theme-smoke.cjs.
+  const env={...process.env,STARGLASS_DATA_DIR:dataDir,STARGLASS_NATIVE_PANEL:'0'};delete env.ELECTRON_RUN_AS_NODE;
+  const app=await electron.launch({args:[root],env,timeout:30000});
+  try{
+    const page=await app.firstWindow();
+    const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    await page.getByRole('heading',{name:'Bika-HarmonyOS'}).waitFor();
+    const initial=await page.evaluate(()=>window.starglass.getState());
+    assert.deepEqual(initial.settings.repos,['LoMoCatAp/Bika-HarmonyOS']);
+    const properties=await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];return {size:w.getSize(),onTop:w.isAlwaysOnTop(),title:w.getTitle()};});
+    assert.ok(Math.abs(properties.size[0]-440)<=4 && Math.abs(properties.size[1]-610)<=4);
+    const windowPromise=app.waitForEvent('window');
+    await page.getByRole('button',{name:'设置',exact:true}).click();
+    const settings=await windowPromise;
+    await settings.getByRole('heading',{name:'一点玻璃，一点个性。'}).waitFor();
+    await settings.screenshot({path:path.join(output,'settings.png')});
+    await settings.getByRole('slider',{name:'文字大小',exact:true}).fill('17');
+    await settings.getByLabel('文字粗细',{exact:true}).selectOption('700');
+    await settings.getByRole('slider',{name:'圆角大小',exact:true}).fill('40');
+    await settings.getByRole('switch',{name:'仅显示玻璃'}).click();
+    await settings.getByRole('button',{name:'应用设置'}).click();
+    await expect.poll(()=>page.evaluate(async()=>(await window.starglass.getState()).settings.glassOnly)).toBe(true);
+    await expect(page.locator('.glass-panel')).toHaveClass(/glass-only/);
+    await expect(page.getByRole('heading',{name:'Bika-HarmonyOS'})).toBeHidden();
+    assert.equal(await page.locator('.glass-panel').evaluate(el=>getComputedStyle(el).borderRadius),'40px');
+    await settings.getByRole('switch',{name:'仅显示玻璃'}).click();
+    await settings.getByRole('button',{name:'应用设置'}).click();
+    await expect(page.getByRole('heading',{name:'Bika-HarmonyOS'})).toBeVisible();
+    assert.equal(await page.locator('.stat strong').first().evaluate(el=>getComputedStyle(el).fontWeight),'700');
+    await settings.getByRole('slider',{name:'文字大小',exact:true}).fill('14');
+    await settings.getByLabel('文字粗细',{exact:true}).selectOption('400');
+    await settings.getByRole('slider',{name:'圆角大小',exact:true}).fill('28');
+    await settings.getByRole('button',{name:'冰川',exact:true}).click();
+    await settings.getByRole('slider',{name:'玻璃不透明度'}).fill('65');
+    // A state broadcast during refresh must not erase unsaved changes.
+    await app.evaluate(({BrowserWindow})=>{for(const w of BrowserWindow.getAllWindows()) w.webContents.executeJavaScript('window.starglass.getState()').then(s=>w.webContents.send('state',s));});
+    await settings.getByRole('button',{name:'应用设置'}).click();
+    await expect.poll(()=>page.evaluate(async()=> (await window.starglass.getState()).settings.opacity)).toBe(65);
+    let state=await page.evaluate(()=>window.starglass.getState());assert.equal(state.settings.tint,'ocean');assert.equal(state.settings.opacity,65);
+    await settings.getByRole('button',{name:'桌面行为',exact:true}).click();
+    await settings.getByRole('switch',{name:'始终置顶'}).click();
+    await settings.getByRole('button',{name:'玻璃外观',exact:true}).click();
+    await settings.getByRole('switch',{name:'紧凑模式'}).click();
+    await settings.getByRole('button',{name:'应用设置'}).click();
+    await expect.poll(()=>page.evaluate(async()=> (await window.starglass.getState()).settings.compact)).toBe(true);
+    const compact=await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(w=>w.getTitle()==='StarGlass');return {size:w.getSize(),top:w.isAlwaysOnTop()};});
+    assert.equal(compact.top,true);assert.ok(Math.abs(compact.size[1]-358)<=4,JSON.stringify(compact));
+    await settings.getByRole('switch',{name:'紧凑模式'}).click();await settings.getByRole('button',{name:'桌面行为',exact:true}).click();await settings.getByRole('switch',{name:'始终置顶'}).click();await settings.getByRole('button',{name:'应用设置'}).click();
+    await expect.poll(()=>page.evaluate(async()=> (await window.starglass.getState()).settings.compact)).toBe(false);
+    await settings.getByRole('button',{name:'监控项目',exact:true}).click();
+    await settings.getByRole('textbox',{name:'GitHub 仓库'}).fill('not a repository');await settings.getByRole('button',{name:'添加',exact:true}).click();
+    await settings.getByRole('status').filter({hasText:'请输入 owner/repo'}).waitFor();
+    await settings.getByRole('button',{name:'数据与同步',exact:true}).click();
+    await settings.getByLabel('自动同步间隔').selectOption('60');await settings.getByRole('button',{name:'应用设置'}).click();
+    await expect.poll(()=>page.evaluate(async()=> (await window.starglass.getState()).settings.interval)).toBe(60);
+    // Wait for the actual GitHub request, accepting a visible offline error but recording it.
+    await expect.poll(()=>page.evaluate(async()=> (await window.starglass.getState()).refreshing),{timeout:120000}).toBe(false);
+    state=await page.evaluate(()=>window.starglass.getState());
+    await page.screenshot({path:path.join(output,'panel.png')});
+    await settings.screenshot({path:path.join(output,'sync.png')});
+    assert.equal(state.settings.interval,60);assert.equal(errors.length,0,errors.join('\n'));
+    const disk=JSON.parse(fs.readFileSync(path.join(dataDir,'state.json'),'utf8'));assert.equal(disk.settings.opacity,65);
+    console.log(JSON.stringify({passed:true,properties,project:state.projects['LoMoCatAp/Bika-HarmonyOS'],errors:state.errors,nativeGlass:state.nativeGlass,dataDir,screenshots:output},null,2));
+  }finally{await app.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

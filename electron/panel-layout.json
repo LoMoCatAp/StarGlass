@@ -1,0 +1,5 @@
+{
+  "full": {"w": 440, "h": 560, "widthStep": 0, "heightStep": 25},
+  "compact": {"w": 440, "h": 330, "widthStep": 0, "heightStep": 14},
+  "mini": {"w": 300, "h": 40, "widthStep": 10, "heightStep": 2}
+}

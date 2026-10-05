@@ -1,0 +1,16 @@
+node_modules/
+.npm-cache/
+.build-cache/
+references/
+assets/GlassCapture.exe
+dist/
+release/
+.test-data/
+test-results/
+*.log
+native/build/
+native/glass-panel/glasspanel.exe
+HANDOFF.md
+PROGRESS-*.md
+.env
+.env.local

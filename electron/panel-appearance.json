@@ -1,0 +1,7 @@
+[
+  "mini", "compact", "glassOnly", "customSize", "panelWidth", "panelHeight",
+  "panelShape", "resizeEnabled", "radius", "opacity", "blur", "gloss",
+  "refraction", "dispersion", "tint", "glassFps", "fontSize", "fontWeight",
+  "textColor", "textOutline", "textOutlineWidth", "showLogo", "showBrandText",
+  "showTooltips", "alwaysOnTop", "clickThrough"
+]
