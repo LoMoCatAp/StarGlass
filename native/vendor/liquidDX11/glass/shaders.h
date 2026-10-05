@@ -167,25 +167,17 @@ float hash21(float2 p)
 
 // blur_mix: 0 = untouched desktop (crisp), 0.5 = single bilinear pass, 1 = dual-Kawase heavy frost.
 // Both curves ramp the raw frame in first so the glass centre stays sharp unless blur is asked for.
-float3 sampleBackdrop(float2 uv)
+float3 sampleBackdropMix(float2 uv,float m)
 {
-    float3 r = BlurRaw  .SampleLevel(LinearClamp, uv, 0).rgb;
-    float3 s = BlurSoft .SampleLevel(LinearClamp, uv, 0).rgb;
-    float3 h = BlurHeavy.SampleLevel(LinearClamp, uv, 0).rgb;
-    float  m = saturate(blur_mix);
-    float3 lo = lerp(r, s, saturate(m * 2.0));
-    return lerp(lo, h, saturate(m * 2.0 - 1.0));
+    // Same blend curve; do not fetch textures whose contribution is zero.
+    m=saturate(m);
+    [branch] if(m<=0.0)return BlurRaw.SampleLevel(LinearClamp,uv,0).rgb;
+    [branch] if(m>=1.0)return BlurHeavy.SampleLevel(LinearClamp,uv,0).rgb;
+    [branch] if(m<0.5)return lerp(BlurRaw.SampleLevel(LinearClamp,uv,0).rgb,BlurSoft.SampleLevel(LinearClamp,uv,0).rgb,m*2.0);
+    return lerp(BlurSoft.SampleLevel(LinearClamp,uv,0).rgb,BlurHeavy.SampleLevel(LinearClamp,uv,0).rgb,m*2.0-1.0);
 }
-
-float3 sampleBackdropFrost(float2 uv, float frost)
-{
-    float3 r = BlurRaw  .SampleLevel(LinearClamp, uv, 0).rgb;
-    float3 s = BlurSoft .SampleLevel(LinearClamp, uv, 0).rgb;
-    float3 h = BlurHeavy.SampleLevel(LinearClamp, uv, 0).rgb;
-    float  m = saturate(blur_mix + frost);
-    float3 lo = lerp(r, s, saturate(m * 2.0));
-    return lerp(lo, h, saturate(m * 2.0 - 1.0));
-}
+float3 sampleBackdrop(float2 uv){return sampleBackdropMix(uv,blur_mix);}
+float3 sampleBackdropFrost(float2 uv,float frost){return sampleBackdropMix(uv,blur_mix+frost);}
 
 float sdScene(float2 p)
 {

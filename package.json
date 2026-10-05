@@ -1,6 +1,6 @@
 {
   "name": "starglass",
-  "version": "0.10.1-dev",
+  "version": "0.10.3",
   "private": true,
   "description": "Windows desktop GitHub monitor with GPU liquid glass",
   "author": "LomoCat",

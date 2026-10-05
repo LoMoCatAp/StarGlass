@@ -5,9 +5,10 @@ const { DEFAULTS, validateSettings, normalizeRepo, GitHubClient, addSample } = r
 const { GlassCapture } = require('./glass.cjs');
 const { roundWindowShape } = require('./frame-reader.cjs');
 const { PanelBridge } = require('./panel-bridge.cjs');
-const {panelSize,panelRadius}=require('./panel-layout.cjs');
+const {panelSize,panelRadius,minimumPanelHeight}=require('./panel-layout.cjs');
 const {CapsuleManager}=require('./capsule-manager.cjs');
 const {CaptureCoordinator}=require('./capture-coordinator.cjs');
+const {visibleRepos,projectVisible,setProjectVisibility,selectProject}=require('./project-display.cjs');
 const {panelSettings,overridePanel}=require('./panel-appearance.cjs');
 const gpuSharedName=`Local\\StarGlassGPU_${process.pid}_${require('node:crypto').randomUUID()}`;
 let settingsFocus={repo:'',revision:0};
@@ -59,12 +60,26 @@ function hidePanel() {
   nativePanelVisible=false;bridge?.hide();capsules.setVisible(false);
   panel?.hide();glass?.setActive(false);tray?.setContextMenu(trayMenu());
 }
+function syncPrimaryVisibility(){
+ if(!bridge)return;
+ const repo=state.settings.repos[state.settings.activeRepo]||state.settings.repos[0];
+ (nativePanelVisible&&projectVisible(state.settings,repo)?bridge.show():bridge.hide());
+}
+function setRepoVisible(repo,visible){
+ if(typeof visible!=='boolean')throw new Error('无效的显示状态');
+ const next=setProjectVisibility(state.settings,repo,visible);
+ if(visible){capsules.restoreRepo(repo);nativePanelVisible=true;}
+ updateSettings(next);
+ if(visible&&NATIVE_PANEL&&!nativeActive)startNativePanel();
+ syncPrimaryVisibility();broadcast();return snapshot();
+}
+function switchProject(index){return updateSettings(selectProject(state.settings,index));}
 function showPanel() {
   if(!state||!panel||quitting)return;
   nativePanelVisible=true;
   if(NATIVE_PANEL){
     if(!nativeActive)startNativePanel();
-    else {bridge?.show();capsules.resume(state);}
+    else {syncPrimaryVisibility();capsules.resume(state);}
   }else{
     glass?.setActive(true,state.settings.glassFps);panel.show();panel.focus();
   }
@@ -94,8 +109,8 @@ function trayMenu() {
     { label: '立即刷新', enabled: !refreshing, click: () => refresh() },
     { label: '监控项目', enabled: state.settings.repos.length > 0,
       submenu: state.settings.repos.map((repo, index) => ({
-        label: repo, type: 'radio', checked: index === state.settings.activeRepo,
-        click: () => updateSettings({ ...state.settings, activeRepo: index })
+        label: repo, type: 'checkbox', checked: projectVisible(state.settings,repo),
+        click: item => setRepoVisible(repo,item.checked)
       })) },
     { type: 'separator' },
     { label: '始终置顶', type: 'checkbox', checked: panelSettings(state.settings).alwaysOnTop, click: item => updateCurrentPanel({alwaysOnTop:item.checked}) },
@@ -120,7 +135,7 @@ function applySettings() {
   // Windows fixes min/max tracking bounds on non-resizable windows.
   panel.setResizable(true);
   const size=panelSize(s);
-  panel.setMinimumSize(260,s.mini?32:330+(s.fontSize-12)*14);
+  panel.setMinimumSize(260,Math.ceil(minimumPanelHeight(s)));
   panel.setMaximumSize(1200,1200);
   panel.setSize(size.w,size.h);
   panel.setResizable(s.resizeEnabled);
@@ -142,7 +157,8 @@ function applySettings() {
     state.capsulePositions??={};state.capsulePositions[currentRepo]=position;state.position=position;bridge?.move(position.x,position.y);mainCapsuleRepo=currentRepo;
     try{persist();}catch{}
   }
-  if(nativeActive)capsules.reconcile(state,nativePanelVisible);else capsules.stop();
+  if(NATIVE_PANEL&&nativeActive&&!visibleRepos(state.settings).length)stopNativePanels('all project displays disabled');
+  if(nativeActive){syncPrimaryVisibility();capsules.reconcile(state,nativePanelVisible);}else capsules.stop();
   captureCoordinator.reconcile();
   clearInterval(timer); timer = setInterval(() => refresh(), s.interval * 60000);
 }
@@ -150,7 +166,9 @@ function updateCurrentPanel(patch){const repo=state.settings.repos[state.setting
 function updateSettings(value) {
   const previous = state.settings; state.settings = validateSettings(value);
   try { persist(); } catch (e) { state.settings = previous; throw e; }
-  applySettings(); broadcast();
+  applySettings();
+  if(NATIVE_PANEL&&!visibleRepos(previous).length&&visibleRepos(state.settings).length){nativePanelVisible=true;startNativePanel();}
+  broadcast();
   if (state.settings.repos.some(r => !previous.repos.includes(r))) { lastRefresh = 0; if (!refreshing) void refresh(); }
   return snapshot();
 }
@@ -190,7 +208,7 @@ function useElectronPanel(reason) {
 // the app.  Electron keeps owning GitHub data, settings and persistence; the
 // panel only draws.
 function startNativePanel() {
-  if(nativeActive||bridge||quitting)return;
+  if(nativeActive||bridge||quitting||!visibleRepos(state.settings).length)return;
   if (!fs.existsSync(PANEL_EXE)) {
     stopNativePanels(`native panel missing at ${PANEL_EXE}`,'玻璃面板启动失败，请检查应用文件是否完整。');
     return;
@@ -202,6 +220,7 @@ function startNativePanel() {
     exePath: PANEL_EXE,
     env: {
       SG_GPU_SHARED_NAME:gpuSharedName,SG_GPU_SHARED_ROLE:'producer',
+      SG_START_HIDDEN:!nativePanelVisible||!projectVisible(s,s.repos[s.activeRepo])?'1':'0',
       SG_W:String(panelSize(s).w),SG_H:String(panelSize(s).h),SG_MINI:s.mini?'1':'0',
       SG_FONT_PX: String(s.fontSize),
       SG_SHOW_FPS: '0',
@@ -211,15 +230,15 @@ function startNativePanel() {
       SG_Y: state.position ? String(state.position.y) : undefined,
     },
     log: (line) => console.log(`[panel-bridge] ${line}`),
-    onConnect:()=>{if(!nativePanelVisible)bridge?.hide();captureCoordinator.reconcile(true);},
+    onConnect:()=>{syncPrimaryVisibility();captureCoordinator.reconcile(true);},
     onCommand: (name, args) => {
       if(name==='snapshotReady'){captureCoordinator.acknowledge('primary',args);return;}
       if(name==='captureError'){captureCoordinator.fail(args);return;}
       if(name==='resized'){applyPanelResize(args);return;}
       if (name === 'openSettings') showSettings(state.settings.repos[state.settings.activeRepo]);
-      else if (name === 'hide') hidePanel();
+      else if (name === 'hide') setRepoVisible(mainCapsuleRepo,false);
       else if (name === 'openRepo') { const repo = state.settings.repos[state.settings.activeRepo]; if (repo) void shell.openExternal(`https://github.com/${normalizeRepo(repo)}`); }
-      else if (name === 'nextRepo' || name === 'previousRepo') { const s = panelSettings(state.settings); if (s.repos.length) updateSettings({...s, activeRepo:(s.activeRepo + (name === 'nextRepo' ? 1 : s.repos.length - 1)) % s.repos.length}); }
+      else if (name === 'nextRepo' || name === 'previousRepo') { const s = state.settings; if (s.repos.length) switchProject((s.activeRepo + (name === 'nextRepo' ? 1 : s.repos.length - 1)) % s.repos.length); }
       else if (name === 'refresh') void refresh();
       else if (name === 'menu') tray?.popUpContextMenu(trayMenu());
       else if (name === 'quit') { quitting = true; app.quit(); }
@@ -263,8 +282,9 @@ const capsules=new CapsuleManager({exePath:PANEL_EXE,sharedName:gpuSharedName,po
   else if(name==='resized')applyPanelResize(args,repo);
   else if(name==='openSettings')showSettings(repo);
   else if(name==='openRepo')void shell.openExternal(`https://github.com/${normalizeRepo(repo)}`);
+  else if(name==='nextRepo'||name==='previousRepo'){const s=state.settings,index=s.repos.indexOf(repo);if(index>=0)switchProject((index+(name==='nextRepo'?1:s.repos.length-1))%s.repos.length);}
   else if(name==='refresh')void refresh();
-  else if(name==='hide')capsules.hideRepo(repo);
+  else if(name==='hide')setRepoVisible(repo,false);
  }});
 const captureCoordinator=new CaptureCoordinator({
  getBridges:()=>nativeActive?[['primary',bridge],...capsules.entries()]:[],
@@ -279,6 +299,8 @@ if (process.env.STARGLASS_TEST_HOOKS === '1') {
     snapshot,
     sendNative:command=>bridge?.send(command),
     updateSettings,
+    setRepoVisible,
+    switchProject,
     showSettings,
     showPanel,
     trayAction:id=>{const item=trayMenu().getMenuItemById(id);if(!item)throw new Error('Unknown tray action');item.click(item);},
@@ -326,6 +348,8 @@ else {
     function handle(name, fn) { ipcMain.handle(name, async (event, ...args) => { if (![panel, settingsWindow].some(w => w && !w.isDestroyed() && w.webContents === event.sender) || event.senderFrame !== event.sender.mainFrame) throw new Error('Unauthorized'); return fn(event, ...args); }); }
     handle('get-state', () => snapshot());
     handle('save-settings', (_, value) => updateSettings(value));
+    handle('set-repo-visible',(_,repo,visible)=>setRepoVisible(repo,visible));
+    handle('switch-project',(_,index)=>switchProject(index));
     handle('set-token', (_, value) => {
       if (typeof value !== 'string' || value.length > 512) throw new Error('Token 格式无效');
       value = value.trim(); if (value && !safeStorage.isEncryptionAvailable()) throw new Error('系统加密存储不可用，未保存 Token');

@@ -84,6 +84,8 @@ static int EnvI(const char* name, int def) {
 }
 
 #include "auto_text.h"
+#include "glass_frame_cache.h"
+static GlassFrameCache g_glassFrameCache;
 static AutoTextSampler g_autoText;
 
 // -------------------------------------------------------------------- globals
@@ -138,6 +140,7 @@ static void CreateRenderTarget() {
     }
 }
 static void CleanupRenderTarget() {
+    g_glassFrameCache.Reset();
     if (g_glassSurface) { g_glassSurface->Release(); g_glassSurface=nullptr; }
     if (g_rtv) { g_rtv->Release(); g_rtv = nullptr; }
 }
@@ -460,6 +463,9 @@ struct PanelState {
     int         fps = 1;
     int         glassOnly = 0;
     int showLogo=1, showBrandText=1;
+    int showProjectName=1,showOwner=1,showStars=1,showDownloads=1,showDescription=1,showTrend=1,showMetadata=1,showFooter=1;
+    std::string displayName;
+    float nameFontSize=0,starsFontSize=0,downloadsFontSize=0;
     int mini=0,resizeEnabled=0,showTooltips=0;
     std::string panelShape="auto";
     std::string status, description, version, updated, tint = "pearl", textColor = "dark";
@@ -566,6 +572,18 @@ static void ApplyStateLine(const std::string& line) {
             else if (k == "fps")       g_state.fps = ::atoi(v.c_str());
             else if (k == "showLogo") g_state.showLogo=::atoi(v.c_str());
             else if (k == "showBrandText") g_state.showBrandText=::atoi(v.c_str());
+            else if(k=="showProjectName")g_state.showProjectName=::atoi(v.c_str());
+            else if(k=="showOwner")g_state.showOwner=::atoi(v.c_str());
+            else if(k=="showStars")g_state.showStars=::atoi(v.c_str());
+            else if(k=="showDownloads")g_state.showDownloads=::atoi(v.c_str());
+            else if(k=="showDescription")g_state.showDescription=::atoi(v.c_str());
+            else if(k=="showTrend")g_state.showTrend=::atoi(v.c_str());
+            else if(k=="showMetadata")g_state.showMetadata=::atoi(v.c_str());
+            else if(k=="showFooter")g_state.showFooter=::atoi(v.c_str());
+            else if(k=="nameFontSize")g_state.nameFontSize=(float)::atof(v.c_str());
+            else if(k=="starsFontSize")g_state.starsFontSize=(float)::atof(v.c_str());
+            else if(k=="downloadsFontSize")g_state.downloadsFontSize=(float)::atof(v.c_str());
+            else if(k=="displayName")g_state.displayName=DecodeText(v);
             else if (k == "glassOnly") g_state.glassOnly = ::atoi(v.c_str());
             else if (k == "repoIndex") g_state.repoIndex = ::atoi(v.c_str());
             else if (k == "repoCount") g_state.repoCount = ::atoi(v.c_str());
@@ -711,7 +729,11 @@ static void ApplyLiveState() {
         m.refr_band=std::max(8.f,st.refraction); m.chroma=st.dispersion; m.highlight=st.gloss;
     }
     static int lastTop=-1, lastPass=-1;
-    g_mini=st.mini!=0;g_canResize=st.resizeEnabled!=0;g_minPanelHeight=st.mini?32:330+(g_fontPx-12)*14;
+    g_mini=st.mini!=0;g_canResize=st.resizeEnabled!=0;
+    const float bodyPx=(float)g_fontPx.load(),namePx=st.nameFontSize>0?st.nameFontSize:bodyPx*(st.mini?1.f:1.65f);
+    const float starsPx=st.starsFontSize>0?st.starsFontSize:bodyPx*(st.mini?.92f:2.65f),downloadsPx=st.downloadsFontSize>0?st.downloadsFontSize:bodyPx*(st.mini?.92f:2.65f);
+    g_minPanelHeight=(int)std::ceil(st.mini?std::max(32.f,std::max({st.showProjectName?namePx:0.f,st.showStars?starsPx:0.f,st.showDownloads?downloadsPx:0.f})+16.f):std::min(1200.f,std::max(240.f,330+(bodyPx-12)*14)+std::max(0.f,namePx-bodyPx*1.65f)+std::max(0.f,std::max(starsPx,downloadsPx)-bodyPx*2.65f)));
+
     g_outlinePill=st.panelShape=="pill"||(st.panelShape=="auto"&&st.mini);
     g_outlineRadius=st.panelShape=="rectangle"?0.f:st.radius*g_scale;
     LONG_PTR style=::GetWindowLongPtrW(g_hwnd,GWL_STYLE);
@@ -927,7 +949,8 @@ static void RenderFrame() {
     g_renderer.BeginFrame(cw, ch, origin_x, origin_y,
                           g_backdrop.width(), g_backdrop.height(), cursor_local);
 
-    if (g_stateDirty) ApplyLiveState();
+    const bool appearanceChanged=g_stateDirty.load();
+    if (appearanceChanged) ApplyLiveState();
     PanelState st;
     {
         std::lock_guard<std::mutex> lk(g_stateMutex);
@@ -949,14 +972,22 @@ static void RenderFrame() {
     g_autoText.regions.clear();
     DrawPanelText(cw, ch);
 
-    const float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    g_ctx->OMSetRenderTargets(1, &g_rtv, nullptr);
-    g_ctx->ClearRenderTargetView(g_rtv, clear);
-    D3D11_VIEWPORT vp = {};
-    vp.Width = (float)cw; vp.Height = (float)ch; vp.MaxDepth = 1.0f;
-    g_ctx->RSSetViewports(1, &vp);
-
-    g_renderer.Render(g_backdrop.heavySRV(), g_backdrop.softSRV(), g_backdrop.rawSRV());
+    const float clear[4] = {0,0,0,0};
+    D3D11_VIEWPORT vp={};vp.Width=(float)cw;vp.Height=(float)ch;vp.MaxDepth=1.f;
+    ID3D11Texture2D* target=nullptr;g_swap->GetBuffer(0,IID_PPV_ARGS(&target));
+    const GlassFrameKey key{g_backdrop.frameSerial(),origin_x,origin_y,cw,ch,cursor_local.x,cursor_local.y};
+    const bool animated=g_dragging||st.flow!=0.f||std::abs(g_renderer.Entrance()-1.f)>.0001f;
+    g_ctx->OMSetRenderTargets(0,nullptr,nullptr);
+    ID3D11ShaderResourceView* unbind[3]={};g_ctx->PSSetShaderResources(0,3,unbind);
+    const bool reused=g_glassFrameCache.Restore(g_ctx,target,key,appearanceChanged||g_stateDirty.load(),animated);
+    if(!reused){
+        g_ctx->OMSetRenderTargets(1,&g_rtv,nullptr);g_ctx->ClearRenderTargetView(g_rtv,clear);g_ctx->RSSetViewports(1,&vp);
+        g_renderer.Render(g_backdrop.heavySRV(),g_backdrop.softSRV(),g_backdrop.rawSRV());
+        g_ctx->OMSetRenderTargets(0,nullptr,nullptr);
+        g_glassFrameCache.Save(g_dev,g_ctx,target,key);
+    }
+    if(target)target->Release();
+    // Glyphs and their smooth color transition are drawn freshly every frame.
     g_autoText.Sample(g_dev,g_ctx,g_glassSurface);
     g_ctx->OMSetRenderTargets(1,&g_rtv,nullptr);
     g_ctx->RSSetViewports(1,&vp);
@@ -1051,7 +1082,7 @@ int main(int, char**) {
     // suppress the console-subsystem window), which puts SW_HIDE into our
     // STARTUPINFO -- SW_SHOWDEFAULT would honour that and leave the panel
     // invisible while it happily renders frames off-screen.
-    ::ShowWindow(hwnd, SW_SHOW);
+    ::ShowWindow(hwnd, EnvI("SG_START_HIDDEN",0)?SW_HIDE:SW_SHOW);
     ::UpdateWindow(hwnd);
 
     if (!g_renderer.Init(g_dev, g_ctx)) return 1;

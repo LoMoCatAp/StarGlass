@@ -28,7 +28,7 @@ class LiveDesktop {
         HWND hwnd=nullptr; Pool pool{nullptr}; Session session{nullptr};
         Ptr<ID3D11Texture2D> texture; Ptr<ID3D11ShaderResourceView> srv;
         winrt::Windows::Graphics::SizeInt32 size{};
-        RECT bounds{}; bool ready=false; UINT textureW=0,textureH=0;
+        RECT bounds{}; float alpha=1;COLORREF key=0;bool keyed=false;bool ready=false; UINT textureW=0,textureH=0;
         ~Source(){try{if(session)session.Close();if(pool)pool.Close();}catch(...){} }
     };
     ID3D11Device* dev_=nullptr; ID3D11DeviceContext* ctx_=nullptr; HWND panel_=nullptr;
@@ -44,6 +44,7 @@ class LiveDesktop {
     RECT monitor_{}; DWORD enumerated_=0,wallpaperChecked_=0,produced_=0,interval_=8;
     std::wstring wallpaperPath_; FILETIME wallpaperTime_{};
     UINT imageW_=0,imageH_=0; DESKTOP_WALLPAPER_POSITION position_=DWPOS_FILL;
+    bool sceneDirty_=true;
     COLORREF desktopColor_=RGB(0,0,0);
     static bool PanelWindow(HWND h){wchar_t cls[80]={};::GetClassNameW(h,cls,80);return std::wcscmp(cls,L"StarGlassPanel")==0;}
     struct Layer {float alpha=1;COLORREF key=0;bool keyed=false;};
@@ -91,15 +92,18 @@ class LiveDesktop {
         }catch(winrt::hresult_error const& e){std::printf("[live-desktop] window source unavailable hr=0x%08lx\n",(unsigned long)e.code().value);}
     }
     void Reconcile(){
+        const auto previousOrder=order_;
         panels_.clear();::EnumWindows(FindPanels,(LPARAM)this);
         if(panels_.empty()){RECT r;::GetWindowRect(panel_,&r);panels_.push_back(r);}
         order_.clear();::EnumWindows(FindSources,(LPARAM)this);
         for(auto it=sources_.begin();it!=sources_.end();){if(std::find(order_.begin(),order_.end(),it->first)==order_.end())it=sources_.erase(it);else ++it;}
         // EnumWindows gives front-to-back order; composition draws back-to-front.
         std::reverse(order_.begin(),order_.end());
+        if(previousOrder!=order_)sceneDirty_=true;
         for(HWND h:order_)if(!sources_.count(h))AddSource(h);
     }
-    void UpdateSource(Source& source){
+    bool UpdateSource(Source& source){
+        bool changed=false;const bool wasReady=source.ready;
         try{
             for(int i=0;i<2;++i){
                 auto frame=source.pool.TryGetNextFrame();if(!frame)break;
@@ -116,16 +120,19 @@ class LiveDesktop {
                     source.textureW=w;source.textureH=h;
                 }
                 const D3D11_BOX box{0,0,0,w,h,1};ctx_->CopySubresourceRegion(source.texture.Get(),0,0,0,0,texture.Get(),0,&box);
-                source.ready=true;frame.Close();
+                source.ready=true;changed=true;frame.Close();
                 if(source.size.Width!=size.Width||source.size.Height!=size.Height){source.pool.Recreate(device_,Format,2,size);}
                 source.size={size.Width,size.Height};
             }
-        }catch(...){source.ready=false;}
+        }catch(...){source.ready=false;return wasReady;}
+        return changed;
     }
     void Wallpaper(){
         if(!desktop_)return;
         std::wstring path;UINT count=0;desktop_->GetMonitorDevicePathCount(&count);
+        const auto oldPosition=position_;const auto oldColor=desktopColor_;
         desktop_->GetPosition(&position_);desktop_->GetBackgroundColor(&desktopColor_);
+        if(oldPosition!=position_||oldColor!=desktopColor_)sceneDirty_=true;
         for(UINT i=0;i<count;++i){
             LPWSTR id=nullptr,file=nullptr;RECT r{};if(FAILED(desktop_->GetMonitorDevicePathAt(i,&id)))continue;
             desktop_->GetMonitorRECT(id,&r);
@@ -134,7 +141,7 @@ class LiveDesktop {
         }
         WIN32_FILE_ATTRIBUTE_DATA attrs{};::GetFileAttributesExW(path.c_str(),GetFileExInfoStandard,&attrs);
         if(path==wallpaperPath_&&::CompareFileTime(&attrs.ftLastWriteTime,&wallpaperTime_)==0)return;
-        wallpaperPath_=path;wallpaperTime_=attrs.ftLastWriteTime;wallpaper_.Reset();wallpaperSrv_.Reset();
+        sceneDirty_=true;wallpaperPath_=path;wallpaperTime_=attrs.ftLastWriteTime;wallpaper_.Reset();wallpaperSrv_.Reset();
         if(path.empty())return;
         Ptr<IWICImagingFactory> factory;Ptr<IWICBitmapDecoder> decoder;Ptr<IWICBitmapFrameDecode> frame;Ptr<IWICFormatConverter> converter;
         if(FAILED(::CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)))||
@@ -192,7 +199,7 @@ float4 PS(V v):SV_TARGET{
         MONITORINFOEXW info{};info.cbSize=sizeof(info);if(!::GetMonitorInfoW(::MonitorFromWindow(panel_,MONITOR_DEFAULTTONEAREST),reinterpret_cast<MONITORINFO*>(&info)))return nullptr;
         const bool resized=!output_||!::EqualRect(&monitor_,&info.rcMonitor);
         if(resized){
-            monitor_=info.rcMonitor;rtv_.Reset();output_.Reset();
+            sceneDirty_=true;monitor_=info.rcMonitor;rtv_.Reset();output_.Reset();
             D3D11_TEXTURE2D_DESC d{};d.Width=monitor_.right-monitor_.left;d.Height=monitor_.bottom-monitor_.top;d.MipLevels=d.ArraySize=1;d.Format=DXGI_FORMAT_B8G8R8A8_UNORM;d.SampleDesc.Count=1;d.BindFlags=D3D11_BIND_RENDER_TARGET|D3D11_BIND_SHADER_RESOURCE;
             if(FAILED(dev_->CreateTexture2D(&d,nullptr,&output_))||FAILED(dev_->CreateRenderTargetView(output_.Get(),nullptr,&rtv_)))return nullptr;
         }
@@ -202,7 +209,15 @@ float4 PS(V v):SV_TARGET{
             if(::EnumDisplaySettingsW(info.szDevice,ENUM_CURRENT_SETTINGS,&mode)&&mode.dmDisplayFrequency>=30)interval_=std::max(1u,1000u/std::min(360u,(unsigned)mode.dmDisplayFrequency));
             Wallpaper();wallpaperChecked_=now;
         }
-        for(auto& p:sources_)UpdateSource(*p.second);
+        for(auto& p:sources_){
+            auto& source=*p.second;if(UpdateSource(source))sceneDirty_=true;
+            RECT bounds={};if(!Bounds(p.first,bounds)){if(source.ready)sceneDirty_=true;source.ready=false;continue;}
+            const auto layer=WindowLayer(p.first);
+            if(!::EqualRect(&source.bounds,&bounds)||source.alpha!=layer.alpha||source.key!=layer.key||source.keyed!=layer.keyed)sceneDirty_=true;
+            source.bounds=bounds;source.alpha=layer.alpha;source.key=layer.key;source.keyed=layer.keyed;
+        }
+        // Reuse unchanged GPU textures, including the shared consumers' blur.
+        if(!sceneDirty_)return nullptr;sceneDirty_=false;
         ID3D11ShaderResourceView* none[3]={};ctx_->PSSetShaderResources(0,3,none);
         ID3D11RenderTargetView* target=rtv_.Get();ctx_->OMSetRenderTargets(1,&target,nullptr);
         const float clear[]={GetRValue(desktopColor_)/255.f,GetGValue(desktopColor_)/255.f,GetBValue(desktopColor_)/255.f,1};ctx_->ClearRenderTargetView(target,clear);

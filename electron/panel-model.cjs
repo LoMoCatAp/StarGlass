@@ -28,6 +28,8 @@ function panelState(state, refreshing = false, now = Date.now()) {
     tint: s.tint, textColor: s.textColor, textOutline: s.textOutline, textOutlineWidth: s.textOutlineWidth, frameLimit: s.glassFps, compact: compactLayout(s) ? 1 : 0,
     topmost: s.alwaysOnTop ? 1 : 0, clickThrough: s.clickThrough ? 1 : 0,
     showLogo: s.showLogo === false ? 0 : 1, showBrandText: s.showBrandText === false ? 0 : 1,
+    displayName:text(s.displayName),nameFontSize:s.nameFontSize||0,starsFontSize:s.starsFontSize||0,downloadsFontSize:s.downloadsFontSize||0,
+    showProjectName:s.showProjectName===false?0:1,showOwner:s.showOwner===false?0:1,showStars:s.showStars===false?0:1,showDownloads:s.showDownloads===false?0:1,showDescription:s.showDescription===false?0:1,showTrend:s.showTrend===false?0:1,showMetadata:s.showMetadata===false?0:1,showFooter:s.showFooter===false?0:1,
     fps: 0, glassOnly: s.glassOnly ? 1 : 0,
     mini:s.mini?1:0,
     panelShape:s.panelShape??'auto',resizeEnabled:s.resizeEnabled?1:0,showTooltips:s.showTooltips?1:0,

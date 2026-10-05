@@ -4,3 +4,12 @@ add_executable(layered-overlay layered-overlay.cpp)
 target_compile_features(layered-overlay PRIVATE cxx_std_17)
 target_compile_definitions(layered-overlay PRIVATE UNICODE _UNICODE)
 target_link_libraries(layered-overlay PRIVATE user32 gdi32)
+
+add_executable(shader-check shader-check.cpp)
+target_compile_features(shader-check PRIVATE cxx_std_17)
+target_include_directories(shader-check PRIVATE ../../native/vendor/liquidDX11/glass)
+target_link_libraries(shader-check PRIVATE d3dcompiler)
+
+add_executable(cache-policy-check cache-policy-check.cpp)
+target_compile_features(cache-policy-check PRIVATE cxx_std_17)
+target_include_directories(cache-policy-check PRIVATE ../../native/glass-panel)

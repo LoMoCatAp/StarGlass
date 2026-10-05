@@ -18,7 +18,7 @@ test('native window region excludes corners and covers center symmetrically',()=
 });
 test('pure glass and typography settings are validated and kept',()=>{
  const s=validateSettings({material:'pure',glassOnly:true,fontSize:99,fontWeight:50,radius:100,glassFps:1000});
- assert.equal(s.material,'liquid');assert.equal(s.glassOnly,true);assert.equal(s.fontSize,18);assert.equal(s.fontWeight,400);assert.equal(s.radius,100);assert.equal(s.glassFps,360);
+ assert.equal(s.material,'liquid');assert.equal(s.glassOnly,true);assert.equal(s.fontSize,48);assert.equal(s.fontWeight,400);assert.equal(s.radius,100);assert.equal(s.glassFps,360);
 });
 
 test('high refresh and optional text outlines survive settings validation',()=>{

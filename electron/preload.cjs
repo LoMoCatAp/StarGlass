@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('starglass', {
   getState: () => ipcRenderer.invoke('get-state'),
+  setRepoVisible: (repo,visible) => ipcRenderer.invoke('set-repo-visible',repo,visible),
+  switchProject: index => ipcRenderer.invoke('switch-project',index),
   saveSettings: value => ipcRenderer.invoke('save-settings', value),
   setToken: value => ipcRenderer.invoke('set-token', value),
   refresh: () => ipcRenderer.invoke('refresh'),

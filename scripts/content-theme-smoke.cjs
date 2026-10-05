@@ -89,7 +89,8 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   await page.getByRole('button',{name:'应用设置',exact:true}).click();
   await expect.poll(()=>log).toContain('compact=1');await expect.poll(()=>log).toContain('topmost=0 clickThrough=1');
   await page.getByRole('button',{name:'监控项目',exact:true}).click();
-  await page.getByRole('button',{name:'在面板显示 octocat/Hello-World',exact:true}).click();await page.getByRole('button',{name:'应用设置',exact:true}).click();
+  await page.getByRole('switch',{name:'桌面显示 octocat/Hello-World',exact:true}).click();
+  await expect.poll(()=>app.evaluate(()=>global.__starglassTest.snapshot().settings.visibleRepos)).toContain('octocat/Hello-World');
   await expect.poll(()=>log).toContain('repo=octocat/Hello-World');
   await page.getByRole('button',{name:'关闭设置',exact:true}).click();
   await expect.poll(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle()==='StarGlass · 设置').isVisible())).toBe(false);

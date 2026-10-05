@@ -70,11 +70,11 @@ if($OutputFile) {
   }
   await expect(page.locator('.mini-content')).toBeVisible();await expect(page.locator('.panel-header')).toHaveCount(0);
   assert.equal(await page.locator('[title]').count(),0);
-  await change({fontSize:14,multiMini:true});
+  await change({fontSize:14,visibleRepos:repos});
   await expect.poll(()=>app.evaluate(()=>global.__starglassTest.capsules().filter(c=>c.connected).length),{timeout:20000}).toBe(repos.length-1);
   await change({customSize:true,panelWidth:480,panelHeight:80,panelShape:'pill'});
   await expect.poll(()=>geometry()).toMatchObject({w:Math.round(480*dpi),h:Math.round(80*dpi)});
-  await change({customSize:false,multiMini:false});
+  await change({customSize:false,visibleRepos:[repos[0]]});
   await expect.poll(()=>app.evaluate(()=>global.__starglassTest.capsules().length)).toBe(0);
   await change({allowScreenCapture:true});
   await expect.poll(()=>app.evaluate(()=>global.__starglassTest.snapshot().captureStatus),{timeout:15000}).toBe('live');
